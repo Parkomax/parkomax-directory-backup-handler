@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { BackupService } from './backup.service';
 import { BackupController } from './backup.controller';
-import { CronService } from './cron.service';
-import { ConfigService } from '@nestjs/config';
 import { BackupStateService } from './backupState.service';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 @Module({
+  imports: [TypeOrmModule.forFeature([]),],
   controllers: [BackupController],
-  providers: [BackupService, CronService,ConfigService , BackupStateService],
+  providers: [BackupService  , BackupStateService ],
 })
 export class BackupModule {}
