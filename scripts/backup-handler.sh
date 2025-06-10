@@ -1,48 +1,52 @@
 #!/bin/bash
 
-# Check if source and destination paths are provided as arguments
-if [ -z "$1" ]; then
-    echo "Error: Source path is missing."
-    echo "Usage: $0 <source_path> <destination_path>"
-    exit 1
-fi
-
-if [ -z "$2" ]; then
-    echo "Error: Destination path is missing."
-    echo "Usage: $0 <source_path> <destination_path>"
-    exit 1
-fi
-
-# Assign arguments to variables
 SOURCE_PATH="$1"
 DEST_PATH="$2"
 
-# Ensure source path exists
-if [ ! -d "$SOURCE_PATH" ]; then
-    echo "Error: Source path '$SOURCE_PATH' does not exist."
-    exit 1
+if [ -z "$SOURCE_PATH" ] || [ -z "$DEST_PATH" ]; then
+  echo "Usage: $0 <source_path> <destination_path>"
+  exit 1
 fi
 
-# Ensure destination directory exists
+# Validate source
+if [ ! -d "$SOURCE_PATH" ]; then
+  echo "Source path does not exist: $SOURCE_PATH"
+  exit 1
+fi
+
 mkdir -p "$DEST_PATH"
 
-# Generate timestamp for backup folder
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-BACKUP_FOLDER="$DEST_PATH/backup-$TIMESTAMP" 
+BACKUP_FOLDER="$DEST_PATH/backup-$TIMESTAMP"
+mkdir -p "$BACKUP_FOLDER"
 
-# Create a new backup by copying data
-echo "$TIMESTAMP - Creating backup: $BACKUP_FOLDER"
-cp -r "$SOURCE_PATH" "$BACKUP_FOLDER"
+echo "$TIMESTAMP - Starting backup..."
 
-# Keep only the last 2 backups (delete older ones if they exist)
-echo "Cleaning up old backups..."
-cd "$DEST_PATH" || exit
+### Step 1: Directory backup
+echo "Backing up files from $SOURCE_PATH"
+cp -r "$SOURCE_PATH" "$BACKUP_FOLDER/files"
 
-BACKUP_COUNT=$(ls -1d backup-* 2>/dev/null | wc -l)
+### Step 2: PostgreSQL backup using pg_dump
+if [ -n "$PGDATABASE" ]; then
+  echo "Backing up PostgreSQL DB: $PGDATABASE"
 
-if [ "$BACKUP_COUNT" -gt 2 ]; then
-    # ls -tpd backup-* | grep /$ | tail -n +3 | xargs -r rm -rf
-    ls -1dt backup-* | tail -n +3 | xargs -r rm -rf
+  # Set pgpass for non-interactive auth
+  PGPASSFILE=$(mktemp)
+  chmod 600 "$PGPASSFILE"
+  echo "*:*:*:$PGUSER:$PGPASSWORD" > "$PGPASSFILE"
+  export PGPASSFILE
+
+  pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -F c -b -v -f "$BACKUP_FOLDER/db_backup.dump" "$PGDATABASE"
+
+  rm -f "$PGPASSFILE"
+  unset PGPASSFILE
+else
+  echo "PGDATABASE not set, skipping DB backup"
 fi
- 
-echo "$END_TIME - Backup process completed successfully!"
+
+### Step 3: Cleanup older backups
+cd "$DEST_PATH" || exit
+echo "Cleaning up old backups..."
+ls -1dt backup-* 2>/dev/null | tail -n +$((BACKUP_COUNT + 1)) | xargs -r rm -rf
+
+echo "$(date +"%Y-%m-%d_%H-%M-%S") - Backup completed: $BACKUP_FOLDER"
